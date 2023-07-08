@@ -1,0 +1,47 @@
+frr version 8.5
+frr defaults traditional
+
+hostname {{ansible_facts['hostname']}}
+log syslog informational
+no ipv6 forwarding
+service integrated-vtysh-config
+{% for counter in [1,2,3] %}
+{% set iface = "eth" ~ counter %}
+!
+interface {{iface}}
+ description {{iface}}
+ ip address {{ansible_facts[iface]['ipv4']['address']}}/{{ansible_facts[iface]['ipv4']['prefix']}}
+ ip ospf mtu-ignore
+ {% if iface=="eth1" -%}
+ {% if ansible_facts['hostname'] == "router1"%}
+ ip ospf cost 1000
+ {% elif ansible_facts['hostname']=="router2" and symmetric_routing == true%}
+ ip ospf cost 1000
+ {% endif %}
+ {% else -%}
+ !ip ospf cost 1000
+ {% endif %}
+ ip ospf hello-interval 10
+ ip ospf dead-interval 30
+!
+{% endfor %}
+
+router ospf
+ !Указываем router-id 
+ router-id {{ ([(ansible_facts['hostname'] | replace("router",""))] * 4)|join(".") }}
+ !Указываем сети, которые хотим анонсировать соседним роутерам
+ {% for counter in [1,2,3] -%}
+{% set iface = "eth" ~ counter %}
+ network {{ (ansible_facts[iface]['ipv4']['address'].split(".")[:-1]+["0"]) | join(".") }}/{{ ansible_facts[iface]['ipv4']['prefix'] }} area 0 
+{% endfor %}
+ !Указываем адреса соседних роутеров
+{% for counter in [1,2] -%}
+{% set iface = "eth" ~ counter %}
+{% set lastoctet = (ansible_facts[iface]['ipv4']['address'].split(".")|last) %}
+{% set neighborlastoctet = {"1":2,"2":1}[lastoctet] %}
+ neighbor {{ (ansible_facts[iface]['ipv4']['address'].split(".")[:-1]+[neighborlastoctet])|join(".") }}
+{% endfor %}
+
+!Указываем адрес log-файла
+log file /var/log/frr/frr.log
+default-information originate always

@@ -1,0 +1,55 @@
+---
+- name: OSPF setup
+  hosts: all
+  become: yes
+  vars_files:
+    - defaults/main.yml
+  tasks:
+    - name: install learning tools
+      ansible.builtin.yum:
+        name:
+          - vim
+          - traceroute
+          - tcpdump
+          - net-tools
+          - ca-certificates
+        state: latest
+        update_cache: true
+    - name: add frr rpm repo
+      ansible.builtin.yum:
+        name: https://rpm.frrouting.org/repo/frr-stable-repo-1-0.el7.noarch.rpm
+        state: present
+    - name: install frr
+      ansible.builtin.yum:
+        name:
+          - frr
+          - frr-pythontools
+        state: present
+    - name: enable ospfd
+      ansible.builtin.lineinfile:
+        path: /etc/frr/daemons
+        regex: "^ospfd=no$"
+        line: ospfd=yes
+    - name: create frr.conf from template
+      ansible.builtin.template:
+        src: frr.conf.j2
+        dest: /etc/frr/frr.conf
+        force: true
+      register: frrconfig
+      tags: setup_ospf
+    - name: start frr
+      ansible.builtin.systemd:
+        name: frr
+        enabled: true
+        state: started
+      tags: setup_ospf
+    - name: restart frr if config changed
+      ansible.builtin.systemd:
+        name: frr
+        enabled: true
+        state: restarted
+      when: frrconfig.changed
+      tags: setup_ospf
+    # - name: Print all available facts
+    #   ansible.builtin.debug:
+    #     var: ansible_facts
